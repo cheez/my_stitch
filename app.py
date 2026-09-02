@@ -15,19 +15,41 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# 다음 2개월 기간 자동 계산
+# 다음 2개월 기간 자동 계산 (연도 자동 넘김 지원)
 def get_next_period_name(current_period: str) -> str:
-    nums = re.findall(r'\d+', str(current_period))
-    if len(nums) >= 2:
-        end_m = int(nums[1])
-        next_start = 1 if end_m == 12 else end_m + 1
-        next_end = 2 if end_m == 12 else end_m + 2
-        return f"{next_start}-{next_end}월"
-    return f"{current_period}_다음"
+    year_match = re.search(r'(\d{4})년', str(current_period))
+    current_year = int(year_match.group(1)) if year_match else datetime.now().year
 
+    month_match = re.findall(r'(\d+)[\s-]*(\d+)월', str(current_period))
+    if month_match:
+        _, end_m = map(int, month_match[0])
+    else:
+        nums = [int(n) for n in re.findall(r'\d+', str(current_period)) if int(n) <= 12]
+        end_m = nums[-1] if nums else 8
+
+    if end_m == 12:
+        next_year = current_year + 1
+        next_start, next_end = 1, 2
+    else:
+        next_year = current_year
+        next_start, next_end = end_m + 1, end_m + 2
+
+    return f"{next_year}년 {next_start}-{next_end}월"
+
+# 연도 및 월 복합 정렬 함수
 def parse_period_sort_key(p_str: str):
-    nums = re.findall(r'\d+', str(p_str))
-    return int(nums[0]) if nums else 0
+    p_str = str(p_str).strip()
+    year_match = re.search(r'(\d{4})년', p_str)
+    year = int(year_match.group(1)) if year_match else 2024
+
+    month_match = re.findall(r'(\d+)[\s-]*(\d+)월', p_str)
+    if month_match:
+        start_m = int(month_match[0][0])
+    else:
+        nums = [int(n) for n in re.findall(r'\d+', p_str) if int(n) <= 12]
+        start_m = nums[0] if nums else 0
+
+    return (year, start_m)
 
 # 유튜브 썸네일 URL 추출 함수
 def extract_youtube_thumbnail(url: str):
@@ -47,7 +69,7 @@ def extract_youtube_thumbnail(url: str):
 def upload_receipt(uploaded_file, period, member_name):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_extension = uploaded_file.name.split(".")[-1].lower()
-    p_code = str(period).replace("월", "M").replace("-", "_")
+    p_code = str(period).replace("년", "Y").replace("월", "M").replace("-", "_").replace(" ", "")
     name_code = hashlib.md5(member_name.encode("utf-8")).hexdigest()[:8]
     safe_path = f"{p_code}/{name_code}_{timestamp}.{file_extension}"
 
@@ -131,12 +153,15 @@ def load_patterns():
 
 df_all = load_data()
 
-# DB 기간 추출 및 정렬
+# DB 기간 추출 및 정렬 (연도+월 기준 내림차순 정렬)
+now_year = datetime.now().year
+default_period = f"{now_year}년 7-8월"
+
 if not df_all.empty and "기간" in df_all.columns:
     unique_periods = [p for p in df_all["기간"].dropna().unique() if str(p).strip()]
     all_periods = sorted(unique_periods, key=parse_period_sort_key, reverse=True)
 else:
-    all_periods = ["7-8월"]
+    all_periods = [default_period]
 
 # 사이드바
 with st.sidebar:
@@ -145,7 +170,6 @@ with st.sidebar:
     st.divider()
 
     if menu in ["월별 활동비 입력", "월별 요약 대시보드"]:
-        # 다음 달 생성 등으로 이동 요청이 있을 경우 위젯 생성 전에 먼저 적용
         if "next_period_to_select" in st.session_state and st.session_state["next_period_to_select"]:
             st.session_state["selected_period"] = st.session_state["next_period_to_select"]
             st.session_state["next_period_to_select"] = None
@@ -348,7 +372,6 @@ if menu == "월별 활동비 입력":
                     supabase.table("settlements").insert(new_rows).execute()
                     st.success(f"[{next_p_name}] 기간이 {len(active_names)}명으로 새로 생성되었습니다!")
 
-                # 안전한 화면 전환을 위해 플래그 설정 후 rerun
                 st.session_state["next_period_to_select"] = next_p_name
                 st.rerun()
 
@@ -416,7 +439,6 @@ elif menu == "🧵 도안 공유 게시판":
 
     patterns = load_patterns()
 
-    # 1. 도안 갤러리 카드 목록 (상단 배치)
     if not patterns:
         st.info("등록된 도안이 없습니다. 아래의 '➕ 새 도안 등록하기'를 눌러 첫 도안을 등록해 보세요!")
     else:
@@ -430,7 +452,6 @@ elif menu == "🧵 도안 공유 게시판":
                 with col:
                     link_lines = [l.strip() for l in str(item.get("links", "")).split("\n") if l.strip()]
 
-                    # 유튜브 썸네일 탐색
                     thumb_url = None
                     for lk in link_lines:
                         yt_thumb = extract_youtube_thumbnail(lk)
@@ -439,7 +460,6 @@ elif menu == "🧵 도안 공유 게시판":
                             break
 
                     with st.container(border=True):
-                        # 카드 상단 썸네일
                         if thumb_url:
                             st.image(thumb_url, use_container_width=True)
                         else:
@@ -452,10 +472,8 @@ elif menu == "🧵 도안 공유 게시판":
                                 unsafe_allow_html=True
                             )
 
-                        # 카드 제목
                         st.markdown(f"**{item.get('title', '제목 없음')}**")
 
-                        # 상세 보기
                         with st.expander("상세 보기", expanded=False):
                             desc_text = item.get("description", "").strip()
                             if desc_text:
@@ -482,7 +500,6 @@ elif menu == "🧵 도안 공유 게시판":
 
     st.divider()
 
-    # 2. 새 도안 등록하기 폼 (하단 배치)
     with st.expander("➕ 새 도안 등록하기", expanded=False):
         with st.form("new_pattern_form", clear_on_submit=True):
             p_title = st.text_input("도안 제목", placeholder="예: 코바늘 미니 카네이션 바구니/키링")
