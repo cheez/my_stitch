@@ -204,11 +204,11 @@ if menu == "월별 활동비 입력":
     row_count = max(len(base_df), 1)
     calc_height = (row_count + 1) * 35 + 40
 
-edited_df = st.data_editor(
+    edited_df = st.data_editor(
         base_df,
         key=f"editor_{selected_period}",
         use_container_width=True,
-        hide_index=True,  # <--- 이 옵션을 추가하면 맨 앞 숫자 열이 숨겨집니다!
+        hide_index=True,
         num_rows="dynamic",
         height=calc_height,
         column_config={
@@ -225,6 +225,7 @@ edited_df = st.data_editor(
         }
     )
 
+    # 4칸 들여쓰기 적용
     selected_mask = edited_df["선택"].astype(bool) if "선택" in edited_df.columns else pd.Series([False]*len(edited_df))
     sel_names = edited_df[selected_mask]["이름"].dropna().unique().tolist() if not edited_df.empty else []
 
