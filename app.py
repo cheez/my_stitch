@@ -186,11 +186,10 @@ if menu == "월별 활동비 입력":
         else:
             st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
 
-# 1. 인덱스를 0부터 새로 초기화 (기존 21, 22... 번호 제거)
+    # 테이블 데이터 준비 (인덱스 초기화)
     base_df = current_df.drop(columns=["id", "기간"], errors="ignore").reset_index(drop=True) if not current_df.empty else pd.DataFrame(columns=[
         "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
     ])
-
     if "선택" not in base_df.columns:
         base_df.insert(0, "선택", False)
 
@@ -206,7 +205,7 @@ if menu == "월별 활동비 입력":
     row_count = max(len(base_df), 1)
     calc_height = (row_count + 1) * 35 + 40
 
-    # 2. hide_index=True 적용하여 인덱스 열 완전 숨김
+    # 데이터 에디터 (hide_index=True 적용)
     edited_df = st.data_editor(
         base_df,
         key=f"editor_{selected_period}",
@@ -426,7 +425,7 @@ elif menu == "🧵 도안 공유 게시판":
                         # 카드 제목
                         st.markdown(f"**{item.get('title', '제목 없음')}**")
 
-                        # 상세 설명 및 링크 확인 아코디언
+                        # 상세 보기 & 수정/삭제 아코디언
                         with st.expander("상세 보기", expanded=False):
                             desc_text = item.get("description", "").strip()
                             if desc_text:
@@ -437,10 +436,32 @@ elif menu == "🧵 도안 공유 게시판":
                             if link_lines:
                                 st.markdown("---")
                                 st.markdown("**🔗 관련 링크**")
-                                for idx, lk in enumerate(link_lines, start=1):
+                                for lk in link_lines:
                                     st.markdown(f"- [{lk}]({lk})")
 
-                            # 삭제 버튼
+                            st.markdown("---")
+
+                            # ✏️ 도안 수정 폼
+                            with st.expander("✏️ 내용 수정하기", expanded=False):
+                                with st.form(f"edit_form_{item['id']}"):
+                                    edit_title = st.text_input("도안 제목", value=item.get("title", ""))
+                                    edit_links = st.text_area("관련 링크 (줄바꿈 구분)", value=item.get("links", ""))
+                                    edit_desc = st.text_area("도안 설명 및 메모", value=item.get("description", ""))
+                                    save_btn = st.form_submit_button("수정 저장", use_container_width=True)
+
+                                    if save_btn:
+                                        if not edit_title.strip():
+                                            st.warning("도안 제목을 입력해 주세요.")
+                                        else:
+                                            supabase.table("patterns").update({
+                                                "title": edit_title.strip(),
+                                                "links": edit_links.strip(),
+                                                "description": edit_desc.strip()
+                                            }).match({"id": item["id"]}).execute()
+                                            st.success("수정 완료되었습니다!")
+                                            st.rerun()
+
+                            # 🗑️ 도안 삭제 버튼
                             if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
                                 supabase.table("patterns").delete().match({"id": item["id"]}).execute()
                                 st.rerun()
@@ -471,4 +492,4 @@ elif menu == "🧵 도안 공유 게시판":
                         "description": p_desc.strip()
                     }).execute()
                     st.success(f"'{p_title}' 도안이 등록되었습니다!")
-                    st.rerun()                
+                    st.rerun()
