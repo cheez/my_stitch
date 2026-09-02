@@ -186,13 +186,15 @@ if menu == "월별 활동비 입력":
         else:
             st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
 
-    base_df = current_df.drop(columns=["id", "기간"], errors="ignore") if not current_df.empty else pd.DataFrame(columns=[
+# 1. 인덱스를 0부터 새로 초기화 (기존 21, 22... 번호 제거)
+    base_df = current_df.drop(columns=["id", "기간"], errors="ignore").reset_index(drop=True) if not current_df.empty else pd.DataFrame(columns=[
         "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
     ])
+
     if "선택" not in base_df.columns:
         base_df.insert(0, "선택", False)
 
-    # 선택된 인원 작업 툴바
+    # 선택된 인원 일괄 작업 툴바 (표 바로 위)
     tool_col1, tool_col2, tool_col3, tool_col_info = st.columns([2.2, 1.8, 1.8, 4.2])
     with tool_col1:
         target_status = st.selectbox("정산 상태 일괄 변경", ["청구 전", "진행 중", "양도", "완료"], label_visibility="collapsed")
@@ -204,6 +206,7 @@ if menu == "월별 활동비 입력":
     row_count = max(len(base_df), 1)
     calc_height = (row_count + 1) * 35 + 40
 
+    # 2. hide_index=True 적용하여 인덱스 열 완전 숨김
     edited_df = st.data_editor(
         base_df,
         key=f"editor_{selected_period}",
@@ -225,7 +228,6 @@ if menu == "월별 활동비 입력":
         }
     )
 
-    # 4칸 들여쓰기 적용
     selected_mask = edited_df["선택"].astype(bool) if "선택" in edited_df.columns else pd.Series([False]*len(edited_df))
     sel_names = edited_df[selected_mask]["이름"].dropna().unique().tolist() if not edited_df.empty else []
 
