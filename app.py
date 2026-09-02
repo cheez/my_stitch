@@ -129,7 +129,7 @@ if menu == "월별 활동비 입력":
     with col_main:
         st.subheader(f"📅 {selected_period} 활동비 내역")
 
-# 영수증 관리 접이식 창
+        # 영수증 관리 접이식 창
         with st.expander("🧾 영수증 사진 업로드 및 관리 (클릭)", expanded=False):
             if "uploader_key_id" not in st.session_state:
                 st.session_state["uploader_key_id"] = 0
@@ -139,14 +139,13 @@ if menu == "월별 활동비 입력":
                 with r_col1:
                     target_user = st.selectbox("이름 선택", current_names, key="receipt_user")
                 with r_col2:
-                    # session_state 키를 조합하여 리셋 시 파일 선택창을 완전히 비움
                     uploaded_file = st.file_uploader(
                         "영수증 파일 (JPG, PNG, PDF)",
                         type=["png", "jpg", "jpeg", "pdf"],
                         key=f"file_uploader_{st.session_state['uploader_key_id']}"
                     )
 
-               btn_u1, btn_u2, btn_u3, _ = st.columns([1.5, 1.8, 1.8, 2.0])
+                btn_u1, btn_u2, btn_u3, _ = st.columns([1.5, 1.8, 1.8, 2.0])
                 with btn_u1:
                     if st.button("영수증 등록", key="btn_upload", use_container_width=True):
                         if uploaded_file is not None:
@@ -181,7 +180,7 @@ if menu == "월별 활동비 입력":
             else:
                 st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
 
-        # 테이블 표시용 데이터 준비 (앞에 '선택' 열 추가)
+        # 테이블 데이터 준비
         base_df = current_df.drop(columns=["id", "기간"], errors="ignore") if not current_df.empty else pd.DataFrame(columns=[
             "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
         ])
@@ -189,7 +188,6 @@ if menu == "월별 활동비 입력":
         if "선택" not in base_df.columns:
             base_df.insert(0, "선택", False)
 
-        # 스크롤 없이 표시할 높이 계산
         row_count = max(len(base_df), 1)
         calc_height = (row_count + 1) * 35 + 40
 
@@ -213,13 +211,11 @@ if menu == "월별 활동비 입력":
             }
         )
 
-        # 선택된 행 계산
         selected_mask = edited_df["선택"].astype(bool) if "선택" in edited_df.columns else pd.Series([False]*len(edited_df))
         selected_count = int(selected_mask.sum())
 
-        # 상단 일괄 작업 툴바
         st.markdown(f"**선택된 인원: `{selected_count}`명**")
-        tool_col1, tool_col2, tool_col3, tool_col4 = st.columns([2.5, 2, 2, 3.5])
+        tool_col1, tool_col2, tool_col3, _ = st.columns([2.5, 2, 2, 3.5])
 
         with tool_col1:
             target_status = st.selectbox("정산 상태 일괄 변경", ["청구 전", "진행 중", "양도", "완료"], label_visibility="collapsed")
@@ -244,7 +240,7 @@ if menu == "월별 활동비 입력":
 
         st.divider()
 
-        # 하단 액션 버튼 (저장하기 / 다음 달 생성)
+        # 하단 액션 버튼
         btn_col_left, _, btn_col_right = st.columns([3, 4, 3])
 
         with btn_col_left:
