@@ -204,10 +204,11 @@ if menu == "월별 활동비 입력":
     row_count = max(len(base_df), 1)
     calc_height = (row_count + 1) * 35 + 40
 
-    edited_df = st.data_editor(
+edited_df = st.data_editor(
         base_df,
         key=f"editor_{selected_period}",
         use_container_width=True,
+        hide_index=True,  # <--- 이 옵션을 추가하면 맨 앞 숫자 열이 숨겨집니다!
         num_rows="dynamic",
         height=calc_height,
         column_config={
