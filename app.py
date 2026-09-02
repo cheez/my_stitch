@@ -181,11 +181,16 @@ if menu == "월별 활동비 입력":
             "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
         ])
 
+        # 인원수에 맞춰 표 높이를 자동 계산 (기본 헤더 36px + 행당 35px + 여유)
+        row_count = max(len(display_df), 1)
+        calc_height = (row_count + 1) * 35 + 40
+
         edited_df = st.data_editor(
             display_df,
             key=f"editor_{selected_period}",
             use_container_width=True,
             num_rows="dynamic",
+            height=calc_height,  # 표 내부 스크롤 없이 전체 행이 다 보이도록 설정
             column_config={
                 "이름": st.column_config.TextColumn("이름", required=True),
                 "실지출": st.column_config.NumberColumn("실지출 (원)", format="%d원", min_value=0, default=0),
