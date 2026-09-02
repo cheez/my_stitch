@@ -107,15 +107,16 @@ with st.sidebar:
     menu = st.radio("메뉴", ["월별 활동비 입력", "월별 요약 대시보드"])
     st.divider()
 
+# 유효한 기간 기본값 보정
     if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
         st.session_state["selected_period"] = all_periods[0]
 
+    # key를 지정하고 index를 제거하여 Streamlit 내부 상태와 1:1 즉시 동기화
     selected_period = st.selectbox(
         "정산 기간 선택",
         all_periods,
-        index=all_periods.index(st.session_state["selected_period"])
-    )
-    st.session_state["selected_period"] = selected_period
+        key="selected_period"
+    )    
 
 # 메인 화면
 if menu == "월별 활동비 입력":
