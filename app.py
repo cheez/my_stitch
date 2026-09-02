@@ -382,38 +382,12 @@ elif menu == "🧵 도안 공유 게시판":
     st.title("🧶 도안")
     st.caption("공유하고 싶은 뜨개 도안과 유튜브 링크를 등록하고 열람할 수 있습니다.")
 
-    # 도안 등록 폼 (접이식)
-    with st.expander("➕ 새 도안 등록하기", expanded=False):
-        with st.form("new_pattern_form", clear_on_submit=True):
-            p_title = st.text_input("도안 제목", placeholder="예: 코바늘 미니 카네이션 바구니/키링")
-            p_links = st.text_area(
-                "관련 링크 (유튜브, 블로그 등)",
-                placeholder="링크를 여러 개 넣으실 때는 엔터(줄바꿈)로 구분해 주세요.\n예:\nhttps://www.youtube.com/watch?v=...\nhttps://blog.naver.com/..."
-            )
-            p_desc = st.text_area(
-                "도안 설명 및 상세 내용",
-                placeholder="도안 관련 설명, 실 정보, 바늘 호수, 콧수 메모 등을 자유롭게 입력하세요."
-            )
-            submit_pattern = st.form_submit_button("도안 등록하기", type="primary")
-
-            if submit_pattern:
-                if not p_title.strip():
-                    st.warning("도안 제목을 입력해 주세요.")
-                else:
-                    supabase.table("patterns").insert({
-                        "title": p_title.strip(),
-                        "links": p_links.strip(),
-                        "description": p_desc.strip()
-                    }).execute()
-                    st.success(f"'{p_title}' 도안이 등록되었습니다!")
-                    st.rerun()
-
     patterns = load_patterns()
 
+    # 1. 도안 갤러리 카드 목록 (상단 배치)
     if not patterns:
-        st.info("등록된 도안이 없습니다. 위의 '➕ 새 도안 등록하기'를 눌러 첫 도안을 등록해 보세요!")
+        st.info("등록된 도안이 없습니다. 아래의 '➕ 새 도안 등록하기'를 눌러 첫 도안을 등록해 보세요!")
     else:
-        # 노션 스타일 갤러리 카드 레이아웃 (한 줄에 4개씩 카드 배치)
         cols_per_row = 4
         for i in range(0, len(patterns), cols_per_row):
             row_items = patterns[i:i + cols_per_row]
@@ -423,7 +397,7 @@ elif menu == "🧵 도안 공유 게시판":
                 with col:
                     link_lines = [l.strip() for l in str(item.get("links", "")).split("\n") if l.strip()]
 
-                    # 링크 중 유튜브 썸네일 탐색
+                    # 유튜브 썸네일 탐색
                     thumb_url = None
                     for lk in link_lines:
                         yt_thumb = extract_youtube_thumbnail(lk)
@@ -462,7 +436,35 @@ elif menu == "🧵 도안 공유 게시판":
                                 for idx, lk in enumerate(link_lines, start=1):
                                     st.markdown(f"- [{lk}]({lk})")
 
-                            # 삭제 기능
+                            # 삭제 버튼
                             if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
                                 supabase.table("patterns").delete().match({"id": item["id"]}).execute()
                                 st.rerun()
+
+    st.divider()
+
+    # 2. 새 도안 등록하기 폼 (하단 배치)
+    with st.expander("➕ 새 도안 등록하기", expanded=False):
+        with st.form("new_pattern_form", clear_on_submit=True):
+            p_title = st.text_input("도안 제목", placeholder="예: 코바늘 미니 카네이션 바구니/키링")
+            p_links = st.text_area(
+                "관련 링크 (유튜브, 블로그 등)",
+                placeholder="링크를 여러 개 넣으실 때는 엔터(줄바꿈)로 구분해 주세요.\n예:\nhttps://www.youtube.com/watch?v=...\nhttps://blog.naver.com/..."
+            )
+            p_desc = st.text_area(
+                "도안 설명 및 상세 내용",
+                placeholder="도안 관련 설명, 실 정보, 바늘 호수, 콧수 메모 등을 자유롭게 입력하세요."
+            )
+            submit_pattern = st.form_submit_button("도안 등록하기", type="primary")
+
+            if submit_pattern:
+                if not p_title.strip():
+                    st.warning("도안 제목을 입력해 주세요.")
+                else:
+                    supabase.table("patterns").insert({
+                        "title": p_title.strip(),
+                        "links": p_links.strip(),
+                        "description": p_desc.strip()
+                    }).execute()
+                    st.success(f"'{p_title}' 도안이 등록되었습니다!")
+                    st.rerun()                
