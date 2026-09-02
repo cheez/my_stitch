@@ -96,6 +96,29 @@ def load_data():
     except Exception as e:
         st.error(f"데이터베이스 연결 오류: {e}")
         return pd.DataFrame()
+        
+# 도안 수정 모달 팝업 창
+@st.dialog("✏️ 도안 내용 수정")
+def edit_pattern_dialog(item):
+    new_title = st.text_input("도안 제목", value=item.get("title", ""))
+    new_links = st.text_area("관련 링크 (줄바꿈 구분)", value=item.get("links", ""), height=100)
+    new_desc = st.text_area("도안 설명 및 메모", value=item.get("description", ""), height=150)
+    
+    col_save, col_close = st.columns([1, 1])
+    with col_save:
+        if st.button("수정 저장", type="primary", use_container_width=True):
+            if not new_title.strip():
+                st.warning("도안 제목을 입력해 주세요.")
+            else:
+                supabase.table("patterns").update({
+                    "title": new_title.strip(),
+                    "links": new_links.strip(),
+                    "description": new_desc.strip()
+                }).match({"id": item["id"]}).execute()
+                st.rerun()
+    with col_close:
+        if st.button("취소", use_container_width=True):
+            st.rerun()
 
 # 도안 데이터 로드
 def load_patterns():
@@ -441,25 +464,14 @@ elif menu == "🧵 도안 공유 게시판":
 
                             st.markdown("---")
 
-                            # ✏️ 도안 수정 폼
-                            with st.expander("✏️ 내용 수정하기", expanded=False):
-                                with st.form(f"edit_form_{item['id']}"):
-                                    edit_title = st.text_input("도안 제목", value=item.get("title", ""))
-                                    edit_links = st.text_area("관련 링크 (줄바꿈 구분)", value=item.get("links", ""))
-                                    edit_desc = st.text_area("도안 설명 및 메모", value=item.get("description", ""))
-                                    save_btn = st.form_submit_button("수정 저장", use_container_width=True)
-
-                                    if save_btn:
-                                        if not edit_title.strip():
-                                            st.warning("도안 제목을 입력해 주세요.")
-                                        else:
-                                            supabase.table("patterns").update({
-                                                "title": edit_title.strip(),
-                                                "links": edit_links.strip(),
-                                                "description": edit_desc.strip()
-                                            }).match({"id": item["id"]}).execute()
-                                            st.success("수정 완료되었습니다!")
-                                            st.rerun()
+                            btn_c1, btn_c2 = st.columns(2)
+                            with btn_c1:
+                                if st.button("✏️ 수정", key=f"edit_btn_{item['id']}", use_container_width=True):
+                                    edit_pattern_dialog(item)
+                            with btn_c2:
+                                if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
+                                    supabase.table("patterns").delete().match({"id": item["id"]}).execute()
+                                    st.rerun()
 
                             # 🗑️ 도안 삭제 버튼
                             if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
