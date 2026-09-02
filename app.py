@@ -31,8 +31,18 @@ def load_data():
                 })
         df = pd.DataFrame(rows)
         df.to_csv(CSV_FILE, index=False, encoding="utf-8-sig")
-    return df
 
+    # CSV 로드 시 발생하는 타입 불일치 방지
+    df["실지출"] = pd.to_numeric(df["실지출"], errors="coerce").fillna(0).astype(int)
+    df["청구액"] = pd.to_numeric(df["청구액"], errors="coerce").fillna(30000).astype(int)
+    df["사비"] = pd.to_numeric(df["사비"], errors="coerce").fillna(0).astype(int)
+    df["확인"] = df["확인"].astype(bool)
+    df["비고"] = df["비고"].fillna("").astype(str)
+    df["정산상태"] = df["정산상태"].fillna("청구 전").astype(str)
+    df["수정일시"] = df["수정일시"].fillna("").astype(str)
+
+    return df
+    
 df_all = load_data()
 
 # 2. 좌측 사이드바
