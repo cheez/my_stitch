@@ -419,7 +419,8 @@ elif menu == "🧵 도안 공유 게시판":
             row_items = patterns[i:i + cols_per_row]
             cols = st.columns(cols_per_row)
 
-            for col, item in zip(cols, row_items):
+            for c_idx, (col, item) in enumerate(zip(cols, row_items)):
+                unique_key_suffix = f"{item.get('id', 'temp')}_{i}_{c_idx}"
                 with col:
                     link_lines = [l.strip() for l in str(item.get("links", "")).split("\n") if l.strip()]
 
@@ -448,7 +449,7 @@ elif menu == "🧵 도안 공유 게시판":
                         # 카드 제목
                         st.markdown(f"**{item.get('title', '제목 없음')}**")
 
-                        # 상세 보기 & 수정/삭제 아코디언
+                        # 상세 보기
                         with st.expander("상세 보기", expanded=False):
                             desc_text = item.get("description", "").strip()
                             if desc_text:
@@ -466,17 +467,12 @@ elif menu == "🧵 도안 공유 게시판":
 
                             btn_c1, btn_c2 = st.columns(2)
                             with btn_c1:
-                                if st.button("✏️ 수정", key=f"edit_btn_{item['id']}", use_container_width=True):
+                                if st.button("✏️ 수정", key=f"edit_btn_{unique_key_suffix}", use_container_width=True):
                                     edit_pattern_dialog(item)
                             with btn_c2:
-                                if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
+                                if st.button("🗑️ 삭제", key=f"del_btn_{unique_key_suffix}", use_container_width=True):
                                     supabase.table("patterns").delete().match({"id": item["id"]}).execute()
                                     st.rerun()
-
-                            # 🗑️ 도안 삭제 버튼
-                            if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
-                                supabase.table("patterns").delete().match({"id": item["id"]}).execute()
-                                st.rerun()
 
     st.divider()
 
