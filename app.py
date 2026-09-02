@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import re
+import hashlib
 from supabase import create_client, Client
 
 st.set_page_config(page_title="Stitch 용산점 활동비 정산", layout="wide")
@@ -34,16 +35,26 @@ def parse_period_sort_key(p_str: str):
 # 영수증 스토리지 업로드 함수
 def upload_receipt(uploaded_file, period, member_name):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_extension = uploaded_file.name.split(".")[-1]
-    file_path = f"{period}/{member_name}_{timestamp}.{file_extension}"
+    file_extension = uploaded_file.name.split(".")[-1].lower()
+    
+    # 한글 깨짐 방지: 폴더명과 파일명을 안전한 영문/숫자로 변환
+    p_code = period.replace("월", "M").replace("-", "_")
+    name_code = hashlib.md5(member_name.encode("utf-8")).hexdigest()[:8]
+    safe_path = f"{p_code}/{name_code}_{timestamp}.{file_extension}"
 
-    file_bytes = uploaded_file.read()
+    file_bytes = uploaded_file.getvalue()
+    content_type = uploaded_file.type or "application/octet-stream"
+
+    # 파일 업로드 (upsert 허용)
     supabase.storage.from_("receipts").upload(
-        path=file_path,
+        path=safe_path,
         file=file_bytes,
-        file_options={"content-type": uploaded_file.type}
+        file_options={
+            "content-type": content_type,
+            "x-upsert": "true"
+        }
     )
-    return supabase.storage.from_("receipts").get_public_url(file_path)
+    return supabase.storage.from_("receipts").get_public_url(safe_path)
 
 # 데이터 로드
 def load_data():
