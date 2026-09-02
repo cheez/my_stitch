@@ -14,18 +14,22 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# 기본 기간 목록
-DEFAULT_PERIODS = ["9-10월", "7-8월", "5-6월", "3-4월", "1-2월"]
-
 # 다음 2개월 기간 자동 계산 함수 (예: "9-10월" -> "11-12월", "11-12월" -> "1-2월")
 def get_next_period_name(current_period: str) -> str:
-    nums = re.findall(r'\d+', current_period)
+    nums = re.findall(r'\d+', str(current_period))
     if len(nums) >= 2:
         end_m = int(nums[1])
         next_start = 1 if end_m == 12 else end_m + 1
         next_end = 2 if end_m == 12 else end_m + 2
         return f"{next_start}-{next_end}월"
     return f"{current_period}_다음"
+
+# 기간 정렬 기준 함수 (예: '9-10월' -> 9)
+def parse_period_sort_key(p_str: str):
+    nums = re.findall(r'\d+', str(p_str))
+    if nums:
+        return int(nums[0])
+    return 0
 
 # 영수증 스토리지 업로드 함수
 def upload_receipt(uploaded_file, period, member_name):
@@ -81,12 +85,12 @@ def load_data():
 
 df_all = load_data()
 
-# DB에 존재하는 모든 기간과 기본 기간을 합쳐 기간 목록 동적 생성
-db_periods = df_all["기간"].dropna().unique().tolist() if not df_all.empty and "기간" in df_all.columns else []
-all_periods = []
-for p in DEFAULT_PERIODS + db_periods:
-    if p not in all_periods:
-        all_periods.append(p)
+# DB에 실제로 저장된 기간만 쿼리/추출하여 정렬 (최신 월이 맨 앞으로 오도록 내림차순)
+if not df_all.empty and "기간" in df_all.columns:
+    unique_periods = [p for p in df_all["기간"].dropna().unique() if str(p).strip()]
+    all_periods = sorted(unique_periods, key=parse_period_sort_key, reverse=True)
+else:
+    all_periods = ["7-8월"]
 
 # 사이드바
 with st.sidebar:
@@ -94,7 +98,7 @@ with st.sidebar:
     menu = st.radio("메뉴", ["월별 활동비 입력", "월별 요약 대시보드"])
     st.divider()
 
-    # 세션 상태로 선택 기간 유지 지원
+    # 세션 상태로 선택 기간 유지
     if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
         st.session_state["selected_period"] = all_periods[0]
 
@@ -112,40 +116,10 @@ if menu == "월별 활동비 입력":
     mask = (df_all["기간"] == selected_period) if not df_all.empty and "기간" in df_all.columns else pd.Series(dtype=bool)
     current_df = df_all[mask].copy() if not df_all.empty and "기간" in df_all.columns else pd.DataFrame()
 
-    is_auto_filled = False
-
-    # 해당 기간에 데이터가 없을 때: 최근 기간 회원 명단 자동 가져오기
-    if current_df.empty:
-        prev_names = []
-        curr_idx = all_periods.index(selected_period)
-        for p in all_periods[curr_idx + 1:]:
-            prev_df = df_all[df_all["기간"] == p] if not df_all.empty and "기간" in df_all.columns else pd.DataFrame()
-            if not prev_df.empty and "이름" in prev_df.columns:
-                prev_names = [n for n in prev_df["이름"].dropna().unique() if str(n).strip()]
-                if prev_names:
-                    break
-
-        if prev_names:
-            current_df = pd.DataFrame({
-                "이름": prev_names,
-                "실지출": 0,
-                "청구액": 30000,
-                "사비": 0,
-                "영수증": "",
-                "정산상태": "청구 전",
-                "확인": False,
-                "비고": "",
-                "수정일시": ""
-            })
-            is_auto_filled = True
-
     current_names = [n for n in current_df["이름"].dropna().unique() if str(n).strip()] if not current_df.empty and "이름" in current_df.columns else []
 
     with col_main:
         st.subheader(f"📅 {selected_period} 활동비 내역")
-
-        if is_auto_filled:
-            st.info(f"💡 이전 기간의 회원 목록({len(current_names)}명)을 기본으로 불러왔습니다. 수정 후 아래 [저장하기]를 누르면 DB에 등록됩니다.")
 
         # 영수증 업로드 창
         with st.expander("🧾 영수증 사진 업로드하기 (클릭)", expanded=False):
@@ -181,7 +155,7 @@ if menu == "월별 활동비 입력":
             "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
         ])
 
-        # 인원수에 맞춰 표 높이를 자동 계산 (기본 헤더 36px + 행당 35px + 여유)
+        # 스크롤 없이 한눈에 들어오도록 테이블 높이 자동 계산
         row_count = max(len(display_df), 1)
         calc_height = (row_count + 1) * 35 + 40
 
@@ -190,7 +164,7 @@ if menu == "월별 활동비 입력":
             key=f"editor_{selected_period}",
             use_container_width=True,
             num_rows="dynamic",
-            height=calc_height,  # 표 내부 스크롤 없이 전체 행이 다 보이도록 설정
+            height=calc_height,
             column_config={
                 "이름": st.column_config.TextColumn("이름", required=True),
                 "실지출": st.column_config.NumberColumn("실지출 (원)", format="%d원", min_value=0, default=0),
@@ -204,8 +178,7 @@ if menu == "월별 활동비 입력":
             }
         )
 
-        # 저장하기 & 다음 기간 생성하기 버튼 나란히 배치
-        # 왼쪽: [💾 저장하기] / 오른쪽 끝: [➕ 다음 달 생성하기]
+        # 왼쪽: [💾 저장하기] / 오른쪽 끝: [➕ 다음 달 생성]
         btn_col_left, _, btn_col_right = st.columns([3, 4, 3])
 
         with btn_col_left:
@@ -244,15 +217,13 @@ if menu == "월별 활동비 입력":
         with btn_col_right:
             next_p_name = get_next_period_name(selected_period)
             if st.button(f"➕ 다음 달({next_p_name}) 생성", use_container_width=True):
-                # 1. 현재 테이블에 있는 회원 목록 추출
                 active_names = [str(r["이름"]).strip() for _, r in edited_df.iterrows() if str(r["이름"]).strip() and str(r["이름"]).strip() != "nan"]
                 if not active_names:
                     active_names = current_names
 
                 if not active_names:
-                    st.warning("현재 기간에 입력된 회원이 없습니다. 먼저 회원을 추가해 주세요.")
+                    st.warning("현재 기간에 회원이 없습니다. 먼저 회원을 추가해 주세요.")
                 else:
-                    # 2. 이미 존재하는지 확인
                     existing = supabase.table("settlements").select("id").match({"period": next_p_name}).execute()
                     if existing.data:
                         st.info(f"이미 [{next_p_name}] 데이터가 존재합니다. 해당 기간으로 이동합니다.")
@@ -274,7 +245,6 @@ if menu == "월별 활동비 입력":
                         supabase.table("settlements").insert(new_rows).execute()
                         st.success(f"[{next_p_name}] 기간이 {len(active_names)}명으로 새로 생성되었습니다!")
 
-                    # 새로 만든 기간으로 화면 전환
                     st.session_state["selected_period"] = next_p_name
                     st.rerun()
 
