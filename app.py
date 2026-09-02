@@ -145,6 +145,11 @@ with st.sidebar:
     st.divider()
 
     if menu in ["월별 활동비 입력", "월별 요약 대시보드"]:
+        # 다음 달 생성 등으로 이동 요청이 있을 경우 위젯 생성 전에 먼저 적용
+        if "next_period_to_select" in st.session_state and st.session_state["next_period_to_select"]:
+            st.session_state["selected_period"] = st.session_state["next_period_to_select"]
+            st.session_state["next_period_to_select"] = None
+
         if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
             st.session_state["selected_period"] = all_periods[0]
 
@@ -343,7 +348,8 @@ if menu == "월별 활동비 입력":
                     supabase.table("settlements").insert(new_rows).execute()
                     st.success(f"[{next_p_name}] 기간이 {len(active_names)}명으로 새로 생성되었습니다!")
 
-                st.session_state["selected_period"] = next_p_name
+                # 안전한 화면 전환을 위해 플래그 설정 후 rerun
+                st.session_state["next_period_to_select"] = next_p_name
                 st.rerun()
 
     st.divider()
