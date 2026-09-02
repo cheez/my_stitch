@@ -15,7 +15,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# 다음 2개월 기간 자동 계산 함수 (예: "9-10월" -> "11-12월", "11-12월" -> "1-2월")
+# 다음 2개월 기간 자동 계산 함수
 def get_next_period_name(current_period: str) -> str:
     nums = re.findall(r'\d+', str(current_period))
     if len(nums) >= 2:
@@ -25,7 +25,7 @@ def get_next_period_name(current_period: str) -> str:
         return f"{next_start}-{next_end}월"
     return f"{current_period}_다음"
 
-# 기간 정렬 기준 함수 (예: '9-10월' -> 9)
+# 기간 정렬 기준 함수
 def parse_period_sort_key(p_str: str):
     nums = re.findall(r'\d+', str(p_str))
     if nums:
@@ -37,15 +37,13 @@ def upload_receipt(uploaded_file, period, member_name):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_extension = uploaded_file.name.split(".")[-1].lower()
     
-    # 한글 깨짐 방지: 폴더명과 파일명을 안전한 영문/숫자로 변환
-    p_code = period.replace("월", "M").replace("-", "_")
+    p_code = str(period).replace("월", "M").replace("-", "_")
     name_code = hashlib.md5(member_name.encode("utf-8")).hexdigest()[:8]
     safe_path = f"{p_code}/{name_code}_{timestamp}.{file_extension}"
 
     file_bytes = uploaded_file.getvalue()
     content_type = uploaded_file.type or "application/octet-stream"
 
-    # 파일 업로드 (upsert 허용)
     supabase.storage.from_("receipts").upload(
         path=safe_path,
         file=file_bytes,
@@ -96,7 +94,7 @@ def load_data():
 
 df_all = load_data()
 
-# DB에 실제로 저장된 기간만 쿼리/추출하여 정렬 (최신 월이 맨 앞으로 오도록 내림차순)
+# DB 기간 추출 및 정렬
 if not df_all.empty and "기간" in df_all.columns:
     unique_periods = [p for p in df_all["기간"].dropna().unique() if str(p).strip()]
     all_periods = sorted(unique_periods, key=parse_period_sort_key, reverse=True)
@@ -109,7 +107,6 @@ with st.sidebar:
     menu = st.radio("메뉴", ["월별 활동비 입력", "월별 요약 대시보드"])
     st.divider()
 
-    # 세션 상태로 선택 기간 유지
     if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
         st.session_state["selected_period"] = all_periods[0]
 
@@ -122,7 +119,7 @@ with st.sidebar:
 
 # 메인 화면
 if menu == "월별 활동비 입력":
-    col_main, col_summary = st.columns([7, 3])
+    col_main, col_summary = st.columns([7.2, 2.8])
 
     mask = (df_all["기간"] == selected_period) if not df_all.empty and "기간" in df_all.columns else pd.Series(dtype=bool)
     current_df = df_all[mask].copy() if not df_all.empty and "기간" in df_all.columns else pd.DataFrame()
@@ -132,69 +129,111 @@ if menu == "월별 활동비 입력":
     with col_main:
         st.subheader(f"📅 {selected_period} 활동비 내역")
 
-        # 영수증 업로드 창
-        with st.expander("🧾 영수증 사진 업로드하기 (클릭)", expanded=False):
+        # 영수증 관리 접이식 창
+        with st.expander("🧾 영수증 사진 업로드 및 관리 (클릭)", expanded=False):
             if current_names:
-                up_col1, up_col2 = st.columns([1, 2])
-                with up_col1:
+                r_col1, r_col2 = st.columns([1, 2])
+                with r_col1:
                     target_user = st.selectbox("이름 선택", current_names, key="receipt_user")
-                with up_col2:
-                    uploaded_file = st.file_uploader("영수증 파일 (JPG, PNG, PDF)", type=["png", "jpg", "jpeg", "pdf"])
+                with r_col2:
+                    uploaded_file = st.file_uploader("영수증 파일 (JPG, PNG, PDF)", type=["png", "jpg", "jpeg", "pdf"], key="file_up")
 
-                if st.button("영수증 등록", key="btn_upload"):
-                    if uploaded_file is not None:
-                        with st.spinner("스토리지에 저장 중..."):
-                            link = upload_receipt(uploaded_file, selected_period, target_user)
-                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-                            
-                            supabase.table("settlements").update({
-                                "receipt_url": link,
-                                "updated_at": now_str
-                            }).match({"period": selected_period, "name": target_user}).execute()
-
-                            st.success(f"[{target_user}]님의 영수증이 등록되었습니다!")
-                            st.rerun()
-                    else:
-                        st.warning("파일을 먼저 선택해 주세요.")
+                btn_u1, btn_u2, _ = st.columns([1.5, 1.8, 3.7])
+                with btn_u1:
+                    if st.button("영수증 등록", key="btn_upload", use_container_width=True):
+                        if uploaded_file is not None:
+                            with st.spinner("저장 중..."):
+                                link = upload_receipt(uploaded_file, selected_period, target_user)
+                                now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+                                supabase.table("settlements").update({
+                                    "receipt_url": link,
+                                    "updated_at": now_str
+                                }).match({"period": selected_period, "name": target_user}).execute()
+                                st.success(f"[{target_user}]님의 영수증이 등록되었습니다!")
+                                st.rerun()
+                        else:
+                            st.warning("파일을 먼저 선택해 주세요.")
+                with btn_u2:
+                    if st.button("🗑️ 영수증 초기화", key="btn_clear_receipt", use_container_width=True):
+                        now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+                        supabase.table("settlements").update({
+                            "receipt_url": "",
+                            "updated_at": now_str
+                        }).match({"period": selected_period, "name": target_user}).execute()
+                        st.info(f"[{target_user}]님의 영수증 링크가 초기화되었습니다.")
+                        st.rerun()
             else:
                 st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
 
-        st.caption("💡 표 아래 '+' 버튼으로 인원을 추가하거나 이름을 수정할 수 있습니다.")
-
-        # 테이블 표시용 데이터 준비
-        display_df = current_df.drop(columns=["id", "기간"], errors="ignore") if not current_df.empty else pd.DataFrame(columns=[
+        # 테이블 표시용 데이터 준비 (앞에 '선택' 열 추가)
+        base_df = current_df.drop(columns=["id", "기간"], errors="ignore") if not current_df.empty else pd.DataFrame(columns=[
             "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
         ])
 
-        # 스크롤 없이 한눈에 들어오도록 테이블 높이 자동 계산
-        row_count = max(len(display_df), 1)
+        if "선택" not in base_df.columns:
+            base_df.insert(0, "선택", False)
+
+        # 스크롤 없이 표시할 높이 계산
+        row_count = max(len(base_df), 1)
         calc_height = (row_count + 1) * 35 + 40
 
         edited_df = st.data_editor(
-            display_df,
+            base_df,
             key=f"editor_{selected_period}",
             use_container_width=True,
             num_rows="dynamic",
             height=calc_height,
             column_config={
+                "선택": st.column_config.CheckboxColumn("선택", default=False),
                 "이름": st.column_config.TextColumn("이름", required=True),
-                "실지출": st.column_config.NumberColumn("실지출 (원)", format="%d원", min_value=0, default=0),
-                "청구액": st.column_config.NumberColumn("청구액 (원)", format="%d원", min_value=0, default=30000),
-                "사비": st.column_config.NumberColumn("사비 (원)", format="%d원", disabled=True),
-                "영수증": st.column_config.LinkColumn("영수증 링크", display_text="영수증 열기"),
+                "실지출": st.column_config.NumberColumn("실지출", format="₩%,d", min_value=0, default=0),
+                "청구액": st.column_config.NumberColumn("청구액", format="₩%,d", min_value=0, default=30000),
+                "사비": st.column_config.NumberColumn("사비", format="₩%,d", disabled=True),
                 "정산상태": st.column_config.SelectboxColumn("정산 상태", options=["청구 전", "진행 중", "양도", "완료"], default="청구 전"),
                 "확인": st.column_config.CheckboxColumn("확인", default=False),
+                "영수증": st.column_config.LinkColumn("영수증", display_text="열기"),
                 "비고": st.column_config.TextColumn("비고"),
                 "수정일시": st.column_config.TextColumn("최종 편집 일시", disabled=True)
             }
         )
 
-        # 왼쪽: [💾 저장하기] / 오른쪽 끝: [➕ 다음 달 생성]
+        # 선택된 행 계산
+        selected_mask = edited_df["선택"].astype(bool) if "선택" in edited_df.columns else pd.Series([False]*len(edited_df))
+        selected_count = int(selected_mask.sum())
+
+        # 상단 일괄 작업 툴바
+        st.markdown(f"**선택된 인원: `{selected_count}`명**")
+        tool_col1, tool_col2, tool_col3, tool_col4 = st.columns([2.5, 2, 2, 3.5])
+
+        with tool_col1:
+            target_status = st.selectbox("정산 상태 일괄 변경", ["청구 전", "진행 중", "양도", "완료"], label_visibility="collapsed")
+        with tool_col2:
+            if st.button("상태 일괄 적용", use_container_width=True, disabled=(selected_count == 0)):
+                sel_names = edited_df[selected_mask]["이름"].dropna().unique().tolist()
+                now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+                for nm in sel_names:
+                    supabase.table("settlements").update({
+                        "status": target_status,
+                        "updated_at": now_str
+                    }).match({"period": selected_period, "name": nm}).execute()
+                st.success(f"{len(sel_names)}명의 상태가 [{target_status}](으)로 변경되었습니다.")
+                st.rerun()
+        with tool_col3:
+            if st.button("🗑️ 선택 인원 삭제", use_container_width=True, disabled=(selected_count == 0)):
+                sel_names = edited_df[selected_mask]["이름"].dropna().unique().tolist()
+                for nm in sel_names:
+                    supabase.table("settlements").delete().match({"period": selected_period, "name": nm}).execute()
+                st.success(f"{len(sel_names)}명이 삭제되었습니다.")
+                st.rerun()
+
+        st.divider()
+
+        # 하단 액션 버튼 (저장하기 / 다음 달 생성)
         btn_col_left, _, btn_col_right = st.columns([3, 4, 3])
 
         with btn_col_left:
             if st.button("💾 데이터베이스에 저장하기", type="primary", use_container_width=True):
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
                 supabase.table("settlements").delete().match({"period": selected_period}).execute()
 
                 insert_rows = []
@@ -239,7 +278,7 @@ if menu == "월별 활동비 입력":
                     if existing.data:
                         st.info(f"이미 [{next_p_name}] 데이터가 존재합니다. 해당 기간으로 이동합니다.")
                     else:
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+                        now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
                         new_rows = [{
                             "period": next_p_name,
                             "name": name,
@@ -270,10 +309,10 @@ if menu == "월별 활동비 입력":
         total_over = max(0, total_spent - total_limit)
 
         st.metric("총 인원", f"{member_cnt} 명")
-        st.metric("총 한도", f"{total_limit:,} 원")
-        st.metric("총 지출", f"{total_spent:,} 원", delta=f"{total_spent - total_limit:,} 원", delta_color="inverse")
-        st.metric("남은 금액", f"{rem_balance:,} 원")
-        st.metric("총 초과액", f"{total_over:,} 원")
+        st.metric("총 한도", f"₩{total_limit:,}")
+        st.metric("총 지출", f"₩{total_spent:,}", delta=f"₩{total_spent - total_limit:,}", delta_color="inverse")
+        st.metric("남은 금액", f"₩{rem_balance:,}")
+        st.metric("총 초과액", f"₩{total_over:,}")
 
         st.divider()
         st.write("**정산 진행 현황**")
@@ -293,11 +332,11 @@ elif menu == "월별 요약 대시보드":
         rem = max(0, lim - sp)
         over = max(0, sp - lim)
         summary_rows.append({
-            "이름": p,
+            "기간": p,
             "회원수": cnt,
-            "총 한도": f"{lim:,}원",
-            "총 지출": f"{sp:,}원",
-            "총 초과": f"{over:,}원",
-            "남은 금액": f"{rem:,}원"
+            "총 한도": f"₩{lim:,}",
+            "총 지출": f"₩{sp:,}",
+            "총 초과": f"₩{over:,}",
+            "남은 금액": f"₩{rem:,}"
         })
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
