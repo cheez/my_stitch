@@ -15,7 +15,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# 다음 2개월 기간 자동 계산 함수
+# 다음 2개월 기간 자동 계산
 def get_next_period_name(current_period: str) -> str:
     nums = re.findall(r'\d+', str(current_period))
     if len(nums) >= 2:
@@ -25,18 +25,28 @@ def get_next_period_name(current_period: str) -> str:
         return f"{next_start}-{next_end}월"
     return f"{current_period}_다음"
 
-# 기간 정렬 기준 함수
 def parse_period_sort_key(p_str: str):
     nums = re.findall(r'\d+', str(p_str))
-    if nums:
-        return int(nums[0])
-    return 0
+    return int(nums[0]) if nums else 0
 
-# 영수증 스토리지 업로드 함수
+# 유튜브 썸네일 URL 추출 함수
+def extract_youtube_thumbnail(url: str):
+    patterns = [
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)',
+        r'(?:https?:\/\/)?youtu\.be\/([a-zA-Z0-9_-]+)',
+        r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]+)'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            video_id = match.group(1)
+            return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+    return None
+
+# 영수증 스토리지 업로드
 def upload_receipt(uploaded_file, period, member_name):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_extension = uploaded_file.name.split(".")[-1].lower()
-    
     p_code = str(period).replace("월", "M").replace("-", "_")
     name_code = hashlib.md5(member_name.encode("utf-8")).hexdigest()[:8]
     safe_path = f"{p_code}/{name_code}_{timestamp}.{file_extension}"
@@ -47,18 +57,15 @@ def upload_receipt(uploaded_file, period, member_name):
     supabase.storage.from_("receipts").upload(
         path=safe_path,
         file=file_bytes,
-        file_options={
-            "content-type": content_type,
-            "x-upsert": "true"
-        }
+        file_options={"content-type": content_type, "x-upsert": "true"}
     )
     return supabase.storage.from_("receipts").get_public_url(safe_path)
 
-# 데이터 로드
+# 정산 데이터 로드
 def load_data():
     try:
         res = supabase.table("settlements").select("*").execute()
-        data = res.data
+        data = res.data or []
         if not data:
             return pd.DataFrame()
 
@@ -77,7 +84,6 @@ def load_data():
             "updated_at": "수정일시"
         }
         df = df.rename(columns=col_mapping)
-
         df["실지출"] = pd.to_numeric(df["실지출"], errors="coerce").fillna(0).astype(int)
         df["청구액"] = pd.to_numeric(df["청구액"], errors="coerce").fillna(30000).astype(int)
         df["사비"] = pd.to_numeric(df["사비"], errors="coerce").fillna(0).astype(int)
@@ -86,11 +92,19 @@ def load_data():
         df["비고"] = df["비고"].fillna("").astype(str)
         df["정산상태"] = df["정산상태"].fillna("청구 전").astype(str)
         df["수정일시"] = df["수정일시"].fillna("").astype(str)
-
         return df
     except Exception as e:
         st.error(f"데이터베이스 연결 오류: {e}")
         return pd.DataFrame()
+
+# 도안 데이터 로드
+def load_patterns():
+    try:
+        res = supabase.table("patterns").select("*").order("id", desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        st.error(f"도안 로드 오류: {e}")
+        return []
 
 df_all = load_data()
 
@@ -104,28 +118,24 @@ else:
 # 사이드바
 with st.sidebar:
     st.header("🧶 Stitch 용산점")
-    menu = st.radio("메뉴", ["월별 활동비 입력", "월별 요약 대시보드"])
+    menu = st.radio("메뉴", ["월별 활동비 입력", "월별 요약 대시보드", "🧵 도안 공유 게시판"])
     st.divider()
 
-    if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
-        st.session_state["selected_period"] = all_periods[0]
+    if menu in ["월별 활동비 입력", "월별 요약 대시보드"]:
+        if "selected_period" not in st.session_state or st.session_state["selected_period"] not in all_periods:
+            st.session_state["selected_period"] = all_periods[0]
 
-    selected_period = st.selectbox(
-        "정산 기간 선택",
-        all_periods,
-        key="selected_period"
-    )
+        selected_period = st.selectbox("정산 기간 선택", all_periods, key="selected_period")
 
-# 메인 화면
+# 1. 월별 활동비 입력 메뉴
 if menu == "월별 활동비 입력":
     mask = (df_all["기간"] == selected_period) if not df_all.empty and "기간" in df_all.columns else pd.Series(dtype=bool)
     current_df = df_all[mask].copy() if not df_all.empty and "기간" in df_all.columns else pd.DataFrame()
-
     current_names = [n for n in current_df["이름"].dropna().unique() if str(n).strip()] if not current_df.empty and "이름" in current_df.columns else []
 
     st.subheader(f"📅 {selected_period} 활동비 내역")
 
-    # 1. 영수증 관리 접이식 창
+    # 영수증 관리 접이식 창
     with st.expander("🧾 영수증 사진 업로드 및 관리 (클릭)", expanded=False):
         if "uploader_key_id" not in st.session_state:
             st.session_state["uploader_key_id"] = 0
@@ -176,17 +186,14 @@ if menu == "월별 활동비 입력":
         else:
             st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
 
-    # 테이블 데이터 준비
     base_df = current_df.drop(columns=["id", "기간"], errors="ignore") if not current_df.empty else pd.DataFrame(columns=[
         "이름", "실지출", "청구액", "사비", "영수증", "정산상태", "확인", "비고", "수정일시"
     ])
-
     if "선택" not in base_df.columns:
         base_df.insert(0, "선택", False)
 
-    # 2. [위치 이동] 선택된 인원 일괄 작업 툴바 (표 바로 위로 배치)
+    # 선택된 인원 작업 툴바
     tool_col1, tool_col2, tool_col3, tool_col_info = st.columns([2.2, 1.8, 1.8, 4.2])
-
     with tool_col1:
         target_status = st.selectbox("정산 상태 일괄 변경", ["청구 전", "진행 중", "양도", "완료"], label_visibility="collapsed")
     with tool_col2:
@@ -194,11 +201,9 @@ if menu == "월별 활동비 입력":
     with tool_col3:
         delete_selected_btn = st.button("🗑️ 선택 인원 삭제", use_container_width=True)
 
-    # 높이 동적 계산 (스크롤 방지)
     row_count = max(len(base_df), 1)
     calc_height = (row_count + 1) * 35 + 40
 
-    # 3. 데이터 편집 표 (data_editor)
     edited_df = st.data_editor(
         base_df,
         key=f"editor_{selected_period}",
@@ -219,7 +224,6 @@ if menu == "월별 활동비 입력":
         }
     )
 
-    # 툴바 버튼 클릭 처리 (edited_df 기반 선택 인원 반영)
     selected_mask = edited_df["선택"].astype(bool) if "선택" in edited_df.columns else pd.Series([False]*len(edited_df))
     sel_names = edited_df[selected_mask]["이름"].dropna().unique().tolist() if not edited_df.empty else []
 
@@ -248,9 +252,7 @@ if menu == "월별 활동비 입력":
             st.success(f"{len(sel_names)}명이 삭제되었습니다.")
             st.rerun()
 
-    # 하단 액션 버튼 (저장하기 / 다음 달 생성)
     btn_col_left, _, btn_col_right = st.columns([3, 4, 3])
-
     with btn_col_left:
         if st.button("💾 데이터베이스에 저장하기", type="primary", use_container_width=True):
             now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
@@ -320,7 +322,7 @@ if menu == "월별 활동비 입력":
 
     st.divider()
 
-    # 4. [위치 이동] 집계 요약 패널 (표 아래쪽으로 이동)
+    # 집계 요약 패널
     st.subheader("📊 집계 요약")
     valid_rows = edited_df[edited_df["이름"].astype(str).str.strip() != ""] if not edited_df.empty else pd.DataFrame()
     member_cnt = len(valid_rows)
@@ -341,7 +343,6 @@ if menu == "월별 활동비 입력":
     with m_c5:
         st.metric("총 초과액", f"₩{total_over:,}")
 
-    # 정산 진행 현황 상태 배지
     if not valid_rows.empty and "정산상태" in valid_rows.columns:
         st.caption("진행 현황")
         status_counts = valid_rows["정산상태"].value_counts()
@@ -353,8 +354,9 @@ if menu == "월별 활동비 입력":
         with s_c3:
             st.success(f"완료: **{status_counts.get('완료', 0)}건**")
         with s_c4:
-            st.secondary(f"양도: **{status_counts.get('양도', 0)}건**") if hasattr(st, "secondary") else st.write(f"• 양도: **{status_counts.get('양도', 0)}건**")
+            st.write(f"• 양도: **{status_counts.get('양도', 0)}건**")
 
+# 2. 월별 요약 대시보드 메뉴
 elif menu == "월별 요약 대시보드":
     st.subheader("📑 전체 기간 정산 요약")
     summary_rows = []
@@ -374,3 +376,93 @@ elif menu == "월별 요약 대시보드":
             "남은 금액": f"₩{rem:,}"
         })
     st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
+# 3. 도안 공유 게시판 메뉴
+elif menu == "🧵 도안 공유 게시판":
+    st.title("🧶 도안")
+    st.caption("공유하고 싶은 뜨개 도안과 유튜브 링크를 등록하고 열람할 수 있습니다.")
+
+    # 도안 등록 폼 (접이식)
+    with st.expander("➕ 새 도안 등록하기", expanded=False):
+        with st.form("new_pattern_form", clear_on_submit=True):
+            p_title = st.text_input("도안 제목", placeholder="예: 코바늘 미니 카네이션 바구니/키링")
+            p_links = st.text_area(
+                "관련 링크 (유튜브, 블로그 등)",
+                placeholder="링크를 여러 개 넣으실 때는 엔터(줄바꿈)로 구분해 주세요.\n예:\nhttps://www.youtube.com/watch?v=...\nhttps://blog.naver.com/..."
+            )
+            p_desc = st.text_area(
+                "도안 설명 및 상세 내용",
+                placeholder="도안 관련 설명, 실 정보, 바늘 호수, 콧수 메모 등을 자유롭게 입력하세요."
+            )
+            submit_pattern = st.form_submit_button("도안 등록하기", type="primary")
+
+            if submit_pattern:
+                if not p_title.strip():
+                    st.warning("도안 제목을 입력해 주세요.")
+                else:
+                    supabase.table("patterns").insert({
+                        "title": p_title.strip(),
+                        "links": p_links.strip(),
+                        "description": p_desc.strip()
+                    }).execute()
+                    st.success(f"'{p_title}' 도안이 등록되었습니다!")
+                    st.rerun()
+
+    patterns = load_patterns()
+
+    if not patterns:
+        st.info("등록된 도안이 없습니다. 위의 '➕ 새 도안 등록하기'를 눌러 첫 도안을 등록해 보세요!")
+    else:
+        # 노션 스타일 갤러리 카드 레이아웃 (한 줄에 4개씩 카드 배치)
+        cols_per_row = 4
+        for i in range(0, len(patterns), cols_per_row):
+            row_items = patterns[i:i + cols_per_row]
+            cols = st.columns(cols_per_row)
+
+            for col, item in zip(cols, row_items):
+                with col:
+                    link_lines = [l.strip() for l in str(item.get("links", "")).split("\n") if l.strip()]
+
+                    # 링크 중 유튜브 썸네일 탐색
+                    thumb_url = None
+                    for lk in link_lines:
+                        yt_thumb = extract_youtube_thumbnail(lk)
+                        if yt_thumb:
+                            thumb_url = yt_thumb
+                            break
+
+                    with st.container(border=True):
+                        # 카드 상단 썸네일
+                        if thumb_url:
+                            st.image(thumb_url, use_container_width=True)
+                        else:
+                            st.markdown(
+                                """
+                                <div style="height: 120px; background-color: #f1f3f5; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #868e96; font-size: 28px;">
+                                    🧶
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+
+                        # 카드 제목
+                        st.markdown(f"**{item.get('title', '제목 없음')}**")
+
+                        # 상세 설명 및 링크 확인 아코디언
+                        with st.expander("상세 보기", expanded=False):
+                            desc_text = item.get("description", "").strip()
+                            if desc_text:
+                                st.write(desc_text)
+                            else:
+                                st.caption("작성된 상세 설명이 없습니다.")
+
+                            if link_lines:
+                                st.markdown("---")
+                                st.markdown("**🔗 관련 링크**")
+                                for idx, lk in enumerate(link_lines, start=1):
+                                    st.markdown(f"- [{lk}]({lk})")
+
+                            # 삭제 기능
+                            if st.button("🗑️ 삭제", key=f"del_pattern_{item['id']}", use_container_width=True):
+                                supabase.table("patterns").delete().match({"id": item["id"]}).execute()
+                                st.rerun()
