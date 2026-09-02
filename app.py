@@ -146,7 +146,7 @@ if menu == "월별 활동비 입력":
                         key=f"file_uploader_{st.session_state['uploader_key_id']}"
                     )
 
-                btn_u1, btn_u2, _ = st.columns([1.5, 1.8, 3.7])
+               btn_u1, btn_u2, btn_u3, _ = st.columns([1.5, 1.8, 1.8, 2.0])
                 with btn_u1:
                     if st.button("영수증 등록", key="btn_upload", use_container_width=True):
                         if uploaded_file is not None:
@@ -158,7 +158,6 @@ if menu == "월별 활동비 입력":
                                     "updated_at": now_str
                                 }).match({"period": selected_period, "name": target_user}).execute()
 
-                                # 업로드 완료 후 파일 선택 영역 자동 비우기
                                 st.session_state["uploader_key_id"] += 1
                                 st.success(f"[{target_user}]님의 영수증이 등록되었습니다!")
                                 st.rerun()
@@ -166,9 +165,18 @@ if menu == "월별 활동비 입력":
                             st.warning("파일을 먼저 선택해 주세요.")
 
                 with btn_u2:
-                    if st.button("🔄 입력창 초기화", key="btn_reset_input", use_container_width=True):
-                        # 파일 선택창을 즉시 초기화하여 다른 파일을 올릴 수 있는 빈 상태로 전환
+                    if st.button("🔄 입력창 비우기", key="btn_reset_input", use_container_width=True):
                         st.session_state["uploader_key_id"] += 1
+                        st.rerun()
+
+                with btn_u3:
+                    if st.button("🗑️ 등록 영수증 삭제", key="btn_delete_receipt", use_container_width=True):
+                        now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+                        supabase.table("settlements").update({
+                            "receipt_url": "",
+                            "updated_at": now_str
+                        }).match({"period": selected_period, "name": target_user}).execute()
+                        st.info(f"[{target_user}]님의 등록된 영수증이 삭제되었습니다.")
                         st.rerun()
             else:
                 st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
