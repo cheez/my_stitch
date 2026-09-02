@@ -129,14 +129,22 @@ if menu == "월별 활동비 입력":
     with col_main:
         st.subheader(f"📅 {selected_period} 활동비 내역")
 
-        # 영수증 관리 접이식 창
+# 영수증 관리 접이식 창
         with st.expander("🧾 영수증 사진 업로드 및 관리 (클릭)", expanded=False):
+            if "uploader_key_id" not in st.session_state:
+                st.session_state["uploader_key_id"] = 0
+
             if current_names:
                 r_col1, r_col2 = st.columns([1, 2])
                 with r_col1:
                     target_user = st.selectbox("이름 선택", current_names, key="receipt_user")
                 with r_col2:
-                    uploaded_file = st.file_uploader("영수증 파일 (JPG, PNG, PDF)", type=["png", "jpg", "jpeg", "pdf"], key="file_up")
+                    # session_state 키를 조합하여 리셋 시 파일 선택창을 완전히 비움
+                    uploaded_file = st.file_uploader(
+                        "영수증 파일 (JPG, PNG, PDF)",
+                        type=["png", "jpg", "jpeg", "pdf"],
+                        key=f"file_uploader_{st.session_state['uploader_key_id']}"
+                    )
 
                 btn_u1, btn_u2, _ = st.columns([1.5, 1.8, 3.7])
                 with btn_u1:
@@ -149,18 +157,18 @@ if menu == "월별 활동비 입력":
                                     "receipt_url": link,
                                     "updated_at": now_str
                                 }).match({"period": selected_period, "name": target_user}).execute()
+
+                                # 업로드 완료 후 파일 선택 영역 자동 비우기
+                                st.session_state["uploader_key_id"] += 1
                                 st.success(f"[{target_user}]님의 영수증이 등록되었습니다!")
                                 st.rerun()
                         else:
                             st.warning("파일을 먼저 선택해 주세요.")
+
                 with btn_u2:
-                    if st.button("🗑️ 영수증 초기화", key="btn_clear_receipt", use_container_width=True):
-                        now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
-                        supabase.table("settlements").update({
-                            "receipt_url": "",
-                            "updated_at": now_str
-                        }).match({"period": selected_period, "name": target_user}).execute()
-                        st.info(f"[{target_user}]님의 영수증 링크가 초기화되었습니다.")
+                    if st.button("🔄 입력창 초기화", key="btn_reset_input", use_container_width=True):
+                        # 파일 선택창을 즉시 초기화하여 다른 파일을 올릴 수 있는 빈 상태로 전환
+                        st.session_state["uploader_key_id"] += 1
                         st.rerun()
             else:
                 st.info("먼저 표에 회원을 입력하고 저장해 주세요.")
